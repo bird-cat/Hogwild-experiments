@@ -59,6 +59,7 @@ extern "C"
         double lambda;     /* regularization parameter */
         int T;             /* number of SGD iteration */
         int n_cores;       /* number of cores used to train the model */
+        int batch_size;    /* batch size of HogBatch SGD */
     };
 
     //
