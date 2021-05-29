@@ -199,16 +199,17 @@ void svc_HogBatch_update(double *grad, double *w, svm_model *model, const svm_pr
     int k;
     int batch_size = model->param.batch_size;
     double lambda = model->param.lambda;
+    int m = min(start_index + batch_size, prob->l);
     svm_node *x;
     double y, y_pred;
     memset(grad, 0, prob->dim * sizeof(double));
     memcpy(w, model->w, prob->dim * sizeof(double));
 
-    for (int i = start_index; i < min(start_index + batch_size, prob->l); i++)
+    for (int i = start_index; i < m; i++)
     {
         x = prob->x[i];
         y = prob->y[i];
-        y_pred = inner_product(grad, x);
+        y_pred = inner_product(w, x);
         if (y * y_pred < 1)
         {
             for (int j = 0; x[j].index != -1; j++)
@@ -240,17 +241,18 @@ void svr_HogBatch_update(double *grad, double *w, svm_model *model, const svm_pr
     int batch_size = model->param.batch_size;
     double lambda = model->param.lambda;
     double epsilon = model->param.p;
+    int m = min(start_index + batch_size, prob->l);
     svm_node *x;
     double y, y_pred;
     memset(grad, 0, prob->dim * sizeof(double));
     memcpy(w, model->w, prob->dim * sizeof(double));
 
     // Calculate gradients
-    for (int i = start_index; i < min(start_index + batch_size, prob->l); i++)
+    for (int i = start_index; i < m; i++)
     {
         x = prob->x[i];
         y = prob->y[i];
-        y_pred = inner_product(grad, x);
+        y_pred = inner_product(w, x);
         if (y_pred - y > epsilon)
         {
             for (int j = 0; x[j].index != -1; j++)
@@ -344,10 +346,6 @@ static const char *svm_type_table[] =
     {
         "b_svc", "epsilon_svr", NULL};
 
-static const char *kernel_type_table[] =
-    {
-        "linear", "polynomial", "rbf", "sigmoid", "precomputed", NULL};
-
 int svm_save_model(const char *model_file_name, const svm_model *model)
 {
     FILE *fp = fopen(model_file_name, "w");
@@ -364,16 +362,6 @@ int svm_save_model(const char *model_file_name, const svm_model *model)
     const svm_parameter &param = model->param;
 
     fprintf(fp, "svm_type %s\n", svm_type_table[param.svm_type]);
-    fprintf(fp, "kernel_type %s\n", kernel_type_table[param.kernel_type]);
-
-    if (param.kernel_type == POLY)
-        fprintf(fp, "degree %d\n", param.degree);
-
-    if (param.kernel_type == POLY || param.kernel_type == RBF || param.kernel_type == SIGMOID)
-        fprintf(fp, "gamma %.17g\n", param.gamma);
-
-    if (param.kernel_type == POLY || param.kernel_type == SIGMOID)
-        fprintf(fp, "coef0 %.17g\n", param.coef0);
 
     if (model->dim)
         fprintf(fp, "dim %d\n", model->dim);
@@ -395,27 +383,6 @@ int svm_save_model(const char *model_file_name, const svm_model *model)
         return 0;
 }
 
-static char *line = NULL;
-static int max_line_len;
-
-static char *readline(FILE *input)
-{
-    int len;
-
-    if (fgets(line, max_line_len, input) == NULL)
-        return NULL;
-
-    while (strrchr(line, '\n') == NULL)
-    {
-        max_line_len *= 2;
-        line = (char *)realloc(line, max_line_len);
-        len = (int)strlen(line);
-        if (fgets(line + len, max_line_len - len, input) == NULL)
-            break;
-    }
-    return line;
-}
-
 //
 // FSCANF helps to handle fscanf failures.
 // Its do-while block avoids the ambiguity when
@@ -434,9 +401,6 @@ bool read_model_header(FILE *fp, svm_model *model)
 {
     svm_parameter &param = model->param;
     // parameters for training only won't be assigned, but arrays are assigned as NULL for safety
-    param.nr_weight = 0;
-    param.weight_label = NULL;
-    param.weight = NULL;
 
     char cmd[81];
     while (1)
@@ -462,31 +426,6 @@ bool read_model_header(FILE *fp, svm_model *model)
                 return false;
             }
         }
-        else if (strcmp(cmd, "kernel_type") == 0)
-        {
-            FSCANF(fp, "%80s", cmd);
-            int i;
-            for (i = 0; kernel_type_table[i]; i++)
-            {
-                if (strcmp(kernel_type_table[i], cmd) == 0)
-                {
-                    param.kernel_type = i;
-                    break;
-                }
-            }
-            if (kernel_type_table[i] == NULL)
-            {
-                printf("2\n");
-                fprintf(stderr, "unknown kernel function.\n");
-                return false;
-            }
-        }
-        else if (strcmp(cmd, "degree") == 0)
-            FSCANF(fp, "%d", &param.degree);
-        else if (strcmp(cmd, "gamma") == 0)
-            FSCANF(fp, "%lf", &param.gamma);
-        else if (strcmp(cmd, "coef0") == 0)
-            FSCANF(fp, "%lf", &param.coef0);
         else if (strcmp(cmd, "dim") == 0)
         {
             FSCANF(fp, "%d", &model->dim);
@@ -599,40 +538,15 @@ void svm_free_and_destroy_model(svm_model **model_ptr_ptr)
 
 void svm_destroy_param(svm_parameter *param)
 {
-    free(param->weight_label);
-    free(param->weight);
+    return;
 }
 
 const char *svm_check_parameter(const svm_problem *prob, const svm_parameter *param)
 {
-    // svm_type
-
     int svm_type = param->svm_type;
     if (svm_type != BINARY_SVC &&
         svm_type != EPSILON_SVR)
         return "unknown svm type";
-
-    // kernel_type, degree
-
-    int kernel_type = param->kernel_type;
-    if (kernel_type != LINEAR &&
-        kernel_type != POLY &&
-        kernel_type != RBF &&
-        kernel_type != SIGMOID &&
-        kernel_type != PRECOMPUTED)
-        return "unknown kernel type";
-
-    if ((kernel_type == POLY || kernel_type == RBF || kernel_type == SIGMOID) &&
-        param->gamma < 0)
-        return "gamma < 0";
-
-    if (kernel_type == POLY && param->degree < 0)
-        return "degree of polynomial kernel < 0";
-
-    // cache_size,eps,C,nu,p,shrinking
-
-    if (param->cache_size <= 0)
-        return "cache_size <= 0";
 
     if (param->eps <= 0)
         return "eps <= 0";
@@ -643,10 +557,6 @@ const char *svm_check_parameter(const svm_problem *prob, const svm_parameter *pa
     if (svm_type == EPSILON_SVR)
         if (param->p < 0)
             return "p < 0";
-
-    if (param->probability != 0 &&
-        param->probability != 1)
-        return "probability != 0 and probability != 1";
     
     if (param->T <= 0)
         return "T <= 0";

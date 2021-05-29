@@ -154,16 +154,8 @@ void parse_command_line(int argc, char **argv, char *input_file_name, char *mode
 
     // default values
     param.svm_type = BINARY_SVC;
-    param.kernel_type = RBF;
-    param.degree = 3;
-    param.gamma = 0; // 1/num_features
-    param.coef0 = 0;
-    param.cache_size = 100;
     param.eps = 1e-3;
     param.p = 0.1;
-    param.nr_weight = 0;
-    param.weight_label = NULL;
-    param.weight = NULL;
     param.n_cores = 1;
     param.batch_size = 30;
     cross_validation = 0;
@@ -179,21 +171,6 @@ void parse_command_line(int argc, char **argv, char *input_file_name, char *mode
         {
         case 's':
             param.svm_type = atoi(argv[i]);
-            break;
-        case 't':
-            param.kernel_type = atoi(argv[i]);
-            break;
-        case 'd':
-            param.degree = atoi(argv[i]);
-            break;
-        case 'g':
-            param.gamma = atof(argv[i]);
-            break;
-        case 'r':
-            param.coef0 = atof(argv[i]);
-            break;
-        case 'm':
-            param.cache_size = atof(argv[i]);
             break;
         case 'e':
             param.eps = atof(argv[i]);
@@ -213,13 +190,6 @@ void parse_command_line(int argc, char **argv, char *input_file_name, char *mode
                 fprintf(stderr, "n-fold cross validation: n must >= 2\n");
                 exit_with_help();
             }
-            break;
-        case 'w':
-            ++param.nr_weight;
-            param.weight_label = (int *)realloc(param.weight_label, sizeof(int) * param.nr_weight);
-            param.weight = (double *)realloc(param.weight, sizeof(double) * param.nr_weight);
-            param.weight_label[param.nr_weight - 1] = atoi(&argv[i - 1][2]);
-            param.weight[param.nr_weight - 1] = atof(argv[i]);
             break;
         case 'T':
             param.T = atoi(argv[i]);
@@ -354,24 +324,6 @@ void read_problem(const char *filename)
         if (x_space[i].index != -1)
             prob.d[x_space[i].index - 1]++;
     }
-
-    if (param.gamma == 0 && max_index > 0)
-        param.gamma = 1.0 / max_index;
-
-    if (param.kernel_type == PRECOMPUTED)
-        for (i = 0; i < prob.l; i++)
-        {
-            if (prob.x[i][0].index != 0)
-            {
-                fprintf(stderr, "Wrong input format: first column must be 0:sample_serial_number\n");
-                exit(1);
-            }
-            if ((int)prob.x[i][0].value <= 0 || (int)prob.x[i][0].value > max_index)
-            {
-                fprintf(stderr, "Wrong input format: sample_serial_number out of range\n");
-                exit(1);
-            }
-        }
 
     fclose(fp);
 }

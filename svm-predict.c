@@ -13,7 +13,6 @@ struct svm_node *x;
 int max_nr_attr = 64;
 
 struct svm_model *model;
-int predict_probability = 0;
 
 static char *line = NULL;
 static int max_line_len;
@@ -50,9 +49,6 @@ void predict(FILE *input, FILE *output)
     double sump = 0, sumt = 0, sumpp = 0, sumtt = 0, sumpt = 0;
 
     int svm_type = svm_get_svm_type(model);
-    //int nr_class = svm_get_nr_class(model);
-    double *prob_estimates = NULL;
-    int j;
 
     max_line_len = 1024;
     line = (char *)malloc(max_line_len * sizeof(char));
@@ -102,21 +98,9 @@ void predict(FILE *input, FILE *output)
         }
         x[i].index = -1;
 
-        if (predict_probability && svm_type == BINARY_SVC)
-        {
-            // Do probability prediction
-            predict_label = svm_predict_probability(model, x, prob_estimates);
-            fprintf(output, "%g", predict_label);
-            for (j = 0; j < 2; j++)
-                fprintf(output, " %g", prob_estimates[j]);
-            fprintf(output, "\n");
-        }
-        else
-        {
-            // Do prediction
-            predict_label = svm_predict(model, x);
-            fprintf(output, "%.17g\n", predict_label);
-        }
+        // Do prediction
+        predict_label = svm_predict(model, x);
+        fprintf(output, "%.17g\n", predict_label);
 
         // Error estimation
         if (predict_label == target_label)
@@ -139,8 +123,6 @@ void predict(FILE *input, FILE *output)
     else
         info("Accuracy = %g%% (%d/%d) (classification)\n",
              (double)correct / total * 100, correct, total);
-    if (predict_probability)
-        free(prob_estimates);
 }
 
 void exit_with_help()
@@ -165,9 +147,6 @@ int main(int argc, char **argv)
         ++i;
         switch (argv[i - 1][1])
         {
-        case 'b':
-            predict_probability = atoi(argv[i]);
-            break;
         case 'q':
             info = &print_null;
             i--;
@@ -202,19 +181,6 @@ int main(int argc, char **argv)
     }
 
     x = (struct svm_node *)malloc(max_nr_attr * sizeof(struct svm_node));
-    if (predict_probability)
-    {
-        if (svm_check_probability_model(model) == 0)
-        {
-            fprintf(stderr, "Model does not support probabiliy estimates\n");
-            exit(1);
-        }
-    }
-    else
-    {
-        if (svm_check_probability_model(model) != 0)
-            info("Model supports probability estimates, but disabled in prediction.\n");
-    }
 
     predict(input, output);
     svm_free_and_destroy_model(&model);
