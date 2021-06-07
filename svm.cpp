@@ -183,10 +183,11 @@ void epsilon_svr_Hogwild_solver(const svm_problem *prob, svm_model *model)
     double *grad = Malloc(double, prob->dim);
     //srand((unsigned int)time(NULL));
     omp_set_num_threads(param->n_cores);
-#pragma omp parallel for firstprivate(grad)
+#pragma omp parallel for firstprivate(grad) schedule(static)
     for (int t = 0; t < param->T; t++)
     {
         //printf("t = %d, thread = %d\n", t, omp_get_thread_num());
+        //int i = rand() % prob->l;
         int i = t % prob->l;
         weight_cpy(grad, model->w, prob->x[i]);
         svr_gradient(grad, param->lambda, param->p, prob, i);
@@ -194,7 +195,7 @@ void epsilon_svr_Hogwild_solver(const svm_problem *prob, svm_model *model)
     }
 }
 
-void svc_HogBatch_update(double *grad, double *w, svm_model *model, const svm_problem *prob, const int start_index)
+void svc_HogBatch_update(double *grad, svm_model *model, const svm_problem *prob, const int start_index)
 {
     int k;
     int batch_size = model->param.batch_size;
@@ -203,20 +204,19 @@ void svc_HogBatch_update(double *grad, double *w, svm_model *model, const svm_pr
     svm_node *x;
     double y, y_pred;
     memset(grad, 0, prob->dim * sizeof(double));
-    memcpy(w, model->w, prob->dim * sizeof(double));
+    //memcpy(w, model->w, prob->dim * sizeof(double));
 
     for (int i = start_index; i < m; i++)
     {
         x = prob->x[i];
         y = prob->y[i];
-        y_pred = inner_product(w, x);
+        y_pred = inner_product(model->w, x);
         if (y * y_pred < 1)
         {
             for (int j = 0; x[j].index != -1; j++)
             {
                 k = x[j].index - 1;
-                grad[k] += lambda * w[k] / prob->d[k] - y * x[j].value;
-                w[k] -= grad[k];
+                grad[k] += lambda * model->w[k] / prob->d[k] - y * x[j].value;
             }
         }
         else
@@ -224,8 +224,7 @@ void svc_HogBatch_update(double *grad, double *w, svm_model *model, const svm_pr
             for (int j = 0; x[j].index != -1; j++)
             {
                 k = x[j].index - 1;
-                grad[k] += lambda * w[k] / prob->d[k];
-                w[k] -= grad[k];
+                grad[k] += lambda * model->w[k] / prob->d[k];
             }
         }
     }
@@ -235,7 +234,7 @@ void svc_HogBatch_update(double *grad, double *w, svm_model *model, const svm_pr
         model->w[j] -= grad[j];
 }
 
-void svr_HogBatch_update(double *grad, double *w, svm_model *model, const svm_problem *prob, const int start_index)
+void svr_HogBatch_update(double *grad, svm_model *model, const svm_problem *prob, const int start_index)
 {
     int k;
     int batch_size = model->param.batch_size;
@@ -245,21 +244,20 @@ void svr_HogBatch_update(double *grad, double *w, svm_model *model, const svm_pr
     svm_node *x;
     double y, y_pred;
     memset(grad, 0, prob->dim * sizeof(double));
-    memcpy(w, model->w, prob->dim * sizeof(double));
+    //memcpy(w, model->w, prob->dim * sizeof(double));
 
     // Calculate gradients
     for (int i = start_index; i < m; i++)
     {
         x = prob->x[i];
         y = prob->y[i];
-        y_pred = inner_product(w, x);
+        y_pred = inner_product(model->w, x);
         if (y_pred - y > epsilon)
         {
             for (int j = 0; x[j].index != -1; j++)
             {
                 k = x[j].index - 1;
-                grad[k] += lambda * w[k] / prob->d[k] + x[j].value;
-                w[k] -= grad[k];
+                grad[k] += lambda * model->w[k] / prob->d[k] + x[j].value;
             }
         }
         else if (y - y_pred > epsilon)
@@ -267,8 +265,7 @@ void svr_HogBatch_update(double *grad, double *w, svm_model *model, const svm_pr
             for (int j = 0; x[j].index != -1; j++)
             {
                 k = x[j].index - 1;
-                grad[k] += lambda * w[k] / prob->d[k] - x[j].value;
-                w[k] -= grad[k];
+                grad[k] += lambda * model->w[k] / prob->d[k] - x[j].value;
             }
         }
         else
@@ -276,8 +273,7 @@ void svr_HogBatch_update(double *grad, double *w, svm_model *model, const svm_pr
             for (int j = 0; x[j].index != -1; j++)
             {
                 k = x[j].index - 1;
-                grad[k] += lambda * w[k] / prob->d[k];
-                w[k] -= grad[k];
+                grad[k] += lambda * model->w[k] / prob->d[k];
             }
         }
     }
@@ -290,29 +286,33 @@ void svr_HogBatch_update(double *grad, double *w, svm_model *model, const svm_pr
 void binary_svc_HogBatch_solver(const svm_problem *prob, svm_model *model)
 {
     svm_parameter *param = &model->param;
-    double *grad = Malloc(double, prob->dim), *w = Malloc(double, prob->dim);
+    double *grad = Malloc(double, prob->dim);
+    //double *w = Malloc(double, prob->dim);
     omp_set_num_threads(param->n_cores);
-#pragma omp parallel for firstprivate(grad, w)
+#pragma omp parallel for firstprivate(grad)
     for (int t = 0; t < param->T; t += param->batch_size)
     {
-        //printf("t = %d, thread = %d\n", t, omp_get_thread_num());
         int i = t % prob->l;
-        svc_HogBatch_update(grad, w, model, prob, i);
+        svc_HogBatch_update(grad, model, prob, i);
     }
+    free(grad);
+    //free(w);
 }
 
 void epsilon_svr_HogBatch_solver(const svm_problem *prob, svm_model *model)
 {
     svm_parameter *param = &model->param;
-    double *grad = Malloc(double, prob->dim), *w = Malloc(double, prob->dim);
+    double *grad = Malloc(double, prob->dim);
+    //double *w = Malloc(double, prob->dim);
     omp_set_num_threads(param->n_cores);
-#pragma omp parallel for firstprivate(grad, w)
+#pragma omp parallel for firstprivate(grad)
     for (int t = 0; t < param->T; t += param->batch_size)
     {
-        //printf("t = %d, thread = %d\n", t, omp_get_thread_num());
         int i = t % prob->l;
-        svr_HogBatch_update(grad, w, model, prob, i);
+        svr_HogBatch_update(grad, model, prob, i);
     }
+    free(grad);
+    //free(w);
 }
 
 struct svm_model *svm_train(const svm_problem *prob, const svm_parameter *param)
