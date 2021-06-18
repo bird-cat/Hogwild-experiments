@@ -15,7 +15,7 @@ void exit_with_help()
         "Usage: svm-train [options] training_set_file [model_file]\n"
         "options:\n"
         "-s svm_type : set type of SVM (default 0)\n"
-        "	0 -- C-SVC		(multi-class classification)\n"
+        "	0 -- C-SVC		(binary classification)\n"
         "	1 -- epsilon-SVR	(regression)\n"
         "-c n_cores : set number of thread used to train the model\n"
         "-b batch_size : set batch size of HogBatch SGD\n"
